@@ -88,8 +88,23 @@
 
 		.approach { padding-block: 97px; }
 		.approach-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; align-items: center; }
-		.approach-image-wrap { position: relative; min-height: 365px; overflow: hidden; background: #d8ddce; }
-		.approach-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+		.approach-image-wrap { position: relative; min-height: 365px; overflow: hidden; background: #d8ddce; perspective: 1100px; }
+		.approach-image { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 65%; }
+		.approach-image-wrap.is-visible .approach-image { animation: portrait-turn 1.4s cubic-bezier(.2, .75, .25, 1) both; }
+		.image-welcome { position: absolute; top: 50%; left: 50%; z-index: 1; width: max-content; max-width: calc(100% - 32px); padding: 14px 20px; transform: translate(-50%, -50%); border: 1px solid rgb(255 255 255 / 35%); background: rgb(32 40 33 / 82%); color: white; font-family: var(--display); font-size: clamp(20px, 3vw, 29px); font-weight: 600; text-align: center; opacity: 0; }
+		.approach-image-wrap.is-visible .image-welcome { animation: welcome-appear .6s ease 1s both; }
+		.speech-button { position: absolute; top: 14px; right: 14px; z-index: 2; display: inline-flex; min-height: 40px; align-items: center; gap: 9px; padding: 8px 13px; border: 1px solid rgb(255 255 255 / 40%); border-radius: 999px; background: rgb(32 40 33 / 88%); color: white; cursor: pointer; font-size: 11px; font-weight: 700; }
+		.speech-button:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
+		.speech-button:disabled { cursor: not-allowed; opacity: .8; }
+		.speech-wave { display: flex; height: 15px; align-items: center; gap: 2px; }
+		.speech-wave i { width: 2px; height: 5px; background: var(--lime); }
+		.approach-image-wrap.is-speaking .speech-wave i { animation: speech-wave .55s ease-in-out infinite alternate; }
+		.approach-image-wrap.is-speaking .speech-wave i:nth-child(2) { animation-delay: .15s; }
+		.approach-image-wrap.is-speaking .speech-wave i:nth-child(3) { animation-delay: .3s; }
+		.speech-status { position: absolute; top: 60px; right: 14px; z-index: 2; max-width: calc(100% - 28px); padding: 6px 9px; background: rgb(32 40 33 / 82%); color: white; font-size: 10px; }
+		@keyframes portrait-turn { from { transform: rotateY(0) scale(.94); } to { transform: rotateY(360deg) scale(1); } }
+		@keyframes welcome-appear { to { opacity: 1; } }
+		@keyframes speech-wave { to { height: 14px; } }
 		.image-caption { position: absolute; right: 14px; bottom: 14px; left: 14px; display: flex; justify-content: space-between; gap: 16px; padding: 13px 15px; background: rgb(247 247 242 / 93%); font-size: 10px; font-weight: 600; }
 		.image-caption span:last-child { color: var(--muted); font-weight: 400; }
 		.approach-copy .eyebrow { margin-bottom: 20px; }
@@ -131,7 +146,10 @@
 		.footer-top { color: white; font-size: 11px; font-weight: 600; }
 		.reveal { opacity: 0; transform: translateY(15px); transition: opacity .65s ease, transform .65s ease; }
 		.reveal.is-visible { opacity: 1; transform: translateY(0); }
-		@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
+		@media (prefers-reduced-motion: reduce) {
+			*, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+			.approach-image-wrap.is-visible .image-welcome { animation-delay: 0s; }
+		}
 		@media (max-width: 760px) {
 			.wrap { width: min(100% - 40px, 560px); }
 			.header-inner { min-height: 68px; }
@@ -242,7 +260,13 @@
 		<section class="approach" id="approach" aria-labelledby="approach-title">
 			<div class="wrap approach-grid">
 				<div class="approach-image-wrap reveal">
-					<img class="approach-image" src="me.jpg" alt="Portrait of Yusuf Alameen Muhammad, owner of Khadmeen Enterprises" loading="lazy">
+					<img class="approach-image" src="you.jpg" alt="Portrait of Yusuf Alameen Muhammad, owner of Khadmeen Enterprises" loading="lazy">
+					<div class="image-welcome" aria-live="polite">Welcome to Khadmeen Enterprises</div>
+					<button class="speech-button" id="speak-welcome" type="button" aria-label="Hear welcome message">
+						<span class="speech-wave" aria-hidden="true"><i></i><i></i><i></i></span>
+						<span class="speech-button-label">Hear welcome</span>
+					</button>
+					<span class="speech-status" id="speech-status" role="status" aria-live="polite"></span>
 					<div class="image-caption"><span>Yusuf Alameen Muhammad</span><span>Owner, Khadmeen Enterprises</span></div>
 				</div>
 				<div class="approach-copy reveal">
@@ -317,6 +341,56 @@
 		}, { threshold: 0.12 });
 
 		document.querySelectorAll('.reveal').forEach((element) => revealObserver.observe(element));
+
+		const speakButton = document.querySelector('#speak-welcome');
+		const speechStatus = document.querySelector('#speech-status');
+		const imageWrap = document.querySelector('.approach-image-wrap');
+		const speechButtonLabel = speakButton.querySelector('.speech-button-label');
+		const speechAvailable = 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window;
+		let stoppedByUser = false;
+
+		if (!speechAvailable) {
+			speakButton.disabled = true;
+			speechStatus.textContent = 'Speech playback is not supported by this browser.';
+		} else {
+			speakButton.addEventListener('click', () => {
+				if (window.speechSynthesis.speaking) {
+					stoppedByUser = true;
+					window.speechSynthesis.cancel();
+					imageWrap.classList.remove('is-speaking');
+					speechButtonLabel.textContent = 'Hear welcome';
+					speakButton.setAttribute('aria-label', 'Hear welcome message');
+					speechStatus.textContent = 'Welcome message stopped.';
+					return;
+				}
+
+				stoppedByUser = false;
+				const greeting = new SpeechSynthesisUtterance("Welcome to Khadmeen Enterprises. We're glad you're here.");
+				greeting.lang = document.documentElement.lang;
+				greeting.rate = 0.9;
+				greeting.onstart = () => {
+					imageWrap.classList.add('is-speaking');
+					speechButtonLabel.textContent = 'Stop speaking';
+					speakButton.setAttribute('aria-label', 'Stop welcome message');
+					speechStatus.textContent = 'Playing welcome message.';
+				};
+				greeting.onend = () => {
+					imageWrap.classList.remove('is-speaking');
+					speechButtonLabel.textContent = 'Hear welcome';
+					speakButton.setAttribute('aria-label', 'Hear welcome message');
+					speechStatus.textContent = 'Welcome message finished.';
+				};
+				greeting.onerror = (event) => {
+					imageWrap.classList.remove('is-speaking');
+					speechButtonLabel.textContent = 'Hear welcome';
+					speakButton.setAttribute('aria-label', 'Hear welcome message');
+					if (event.error !== 'canceled' && !stoppedByUser) {
+						speechStatus.textContent = 'Unable to play the welcome message.';
+					}
+				};
+				window.speechSynthesis.speak(greeting);
+			});
+		}
 
 		document.querySelector('#inquiry-form').addEventListener('submit', (event) => {
 			event.preventDefault();
